@@ -1,0 +1,10 @@
+^C:\USERS\NAKUL\DESKTOP\TRAFFICANALYZER\BUILD\CMAKEFILES\B7AE4C7DA9540F7F10AD2F2C02C3D04B\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/nakul/Desktop/TrafficAnalyzer -BC:/Users/nakul/Desktop/TrafficAnalyzer/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/nakul/Desktop/TrafficAnalyzer/build/TrafficAnalyzer.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

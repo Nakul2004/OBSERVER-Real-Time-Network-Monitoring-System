@@ -1,0 +1,10 @@
+^C:\USERS\NAKUL\DESKTOP\TRAFFICANALYZER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/nakul/Desktop/TrafficAnalyzer -BC:/Users/nakul/Desktop/TrafficAnalyzer/build --check-stamp-file C:/Users/nakul/Desktop/TrafficAnalyzer/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

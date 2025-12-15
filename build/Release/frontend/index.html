@@ -1,0 +1,262 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TrafficAnalyzer Dashboard</title>
+    <!-- Load Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Load Tailwind CSS via CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for aesthetic appeal and responsiveness */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+
+        .card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+
+        .header {
+            border-bottom: 2px solid #e0e6ed;
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background-color: #e0f2fe;
+            border-radius: 8px;
+            padding: 12px;
+            font-weight: 600;
+            color: #004d80;
+        }
+
+        .talker-list li {
+            padding: 4px 0;
+            border-bottom: 1px dashed #eee;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9em;
+        }
+
+            .talker-list li:last-child {
+                border-bottom: none;
+            }
+    </style>
+</head>
+<body>
+
+    <div class="container mx-auto p-4 md:p-8">
+
+        <!-- Header Section -->
+        <header class="header flex flex-col md:flex-row justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">TrafficAnalyzer Dashboard</h1>
+            <div class="mt-4 md:mt-0 space-x-3">
+                <span id="status" class="inline-block px-3 py-1 text-sm font-semibold rounded-full bg-red-100 text-red-700">Disconnected</span>
+                <a href="http://localhost:8080/admin/logs" target="_blank" class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-lg shadow-md transition duration-150">View Raw Logs</a>
+            </div>
+        </header>
+
+        <!-- Real-time Stats & Total Bandwidth -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="card lg:col-span-2">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Real-Time Bandwidth (Bytes/sec)</h2>
+                <canvas id="bandwidthChart"></canvas>
+                <div id="currentBandwidth" class="mt-4 stat-box text-center">
+                    Last Rate: 0 B/s
+                </div>
+            </div>
+
+            <!-- Top Talkers -->
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Top Talkers (Bytes in Window)</h2>
+                <ul id="talkers" class="talker-list min-h-[200px] text-gray-600">
+                    <li>No data yet...</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Protocol Breakdown -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">Protocol Distribution (%)</h2>
+                <div class="flex justify-center">
+                    <div class="max-w-xs">
+                        <canvas id="protocolChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">How to Connect</h2>
+                <p class="text-gray-600 mb-3">This dashboard connects to the C++ server using WebSockets.</p>
+                <ol class="list-decimal list-inside text-sm text-gray-600 space-y-2">
+                    <li>Ensure the C++ `TrafficAnalyzer.exe` is running with Administrator rights.</li>
+                    <li>The server must display: <code class="font-mono text-xs bg-gray-100 p-1 rounded">TrafficAnalyzer listening on http://localhost:8080</code></li>
+                    <li>The connection will automatically attempt to establish a WebSocket on: <code id="ws-url" class="font-mono text-xs bg-gray-100 p-1 rounded"></code></li>
+                    <li>If the status remains "Disconnected", check the server console for errors.</li>
+                </ol>
+                <button onclick="connectWS()" class="mt-4 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150">
+                    Reconnect
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Chart Setup ---
+        const bandwidthData = {
+        labels: [],
+        datasets: [{
+        label: 'Bandwidth (Bytes/sec)',
+        data: [],
+        borderColor: 'rgb(59, 130, 246)',
+        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        tension: 0.3,
+        fill: true
+        }]
+        };
+        const protocolData = {
+        labels: [],
+        datasets: [{
+        data: [],
+        backgroundColor: [
+        'rgb(255, 99, 132)',
+        'rgb(54, 162, 235)',
+        'rgb(255, 205, 86)',
+        'rgb(75, 192, 192)',
+        'rgb(153, 102, 255)'
+        ],
+        hoverOffset: 4
+        }]
+        };
+
+        const bandwidthChart = new Chart(document.getElementById('bandwidthChart'), {
+        type: 'line', data: bandwidthData, options: {
+        animation: false, responsive: true, maintainAspectRatio: true,
+        scales: { y: { beginAtZero: true, title: { display: true, text: 'Bytes/sec' } } }
+        }
+        });
+
+        const protocolChart = new Chart(document.getElementById('protocolChart'), {
+        type: 'pie', data: protocolData, options: {
+        animation: { duration: 500 }, responsive: true, maintainAspectRatio: true,
+        }
+        });
+
+        // --- WebSocket Logic ---
+        let ws = null;
+        const statusElement = document.getElementById('status');
+
+        function updateStatus(connected) {
+        if (connected) {
+        statusElement.textContent = 'Connected';
+        statusElement.className = 'inline-block px-3 py-1 text-sm font-semibold rounded-full bg-green-100 text-green-700';
+        } else {
+        statusElement.textContent = 'Disconnected';
+        statusElement.className = 'inline-block px-3 py-1 text-sm font-semibold rounded-full bg-red-100 text-red-700';
+        }
+        }
+
+        function formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function updateDashboard(msg){
+        const ts = new Date(msg.timestamp * 1000).toLocaleTimeString();
+
+        // 1. Bandwidth Chart Update
+        if (bandwidthData.labels.length > 30) {
+        bandwidthData.labels.shift();
+        bandwidthData.datasets[0].data.shift();
+        }
+        bandwidthData.labels.push(ts);
+        bandwidthData.datasets[0].data.push(msg.total_bytes_per_sec || 0);
+        bandwidthChart.update('none'); // 'none' skips animation for smoother real-time feel
+
+        document.getElementById('currentBandwidth').textContent = `Last Rate: ${formatBytes(msg.total_bytes_per_sec || 0)} / sec`;
+
+        // 2. Protocol Chart Update
+        protocolData.labels = (msg.protocol_breakdown || []).map(p => p.protocol);
+        protocolData.datasets[0].data = (msg.protocol_breakdown || []).map(p => p.percent);
+        protocolChart.update();
+
+        // 3. Top Talkers List Update
+        const talkers = document.getElementById('talkers');
+        talkers.innerHTML = '';
+        if ((msg.top_talkers || []).length === 0) {
+        talkers.innerHTML = '<li>No significant talkers in last window.</li>';
+        } else {
+        (msg.top_talkers || []).forEach(t => {
+        const li = document.createElement('li');
+        const bytesFormatted = formatBytes(t.bytes);
+        li.innerHTML = `<span>${t.ip}</span><span class="font-mono text-sm text-indigo-700">${bytesFormatted}</span>`;
+        talkers.appendChild(li);
+        });
+        }
+        }
+
+        function connectWS(){
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close();
+        }
+
+        const loc = window.location;
+        // Default to localhost:8080 if file is opened locally
+        const hostname = (loc.hostname === '' || loc.hostname === '127.0.0.1') ? 'localhost' : loc.hostname;
+        const port = loc.port === '' ? '8080' : loc.port;
+        const wsProto = loc.protocol === 'https:' ? 'wss' : 'ws';
+        const wsUrl = `${wsProto}://${hostname}:${port}/ws`;
+
+        document.getElementById('ws-url').textContent = wsUrl;
+
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+        console.log('WS connected');
+        updateStatus(true);
+        };
+
+        ws.onmessage = (ev) => {
+        try {
+        const msg = JSON.parse(ev.data);
+        updateDashboard(msg);
+        } catch (e) {
+        console.error("Failed to parse message:", e);
+        }
+        };
+
+        ws.onclose = () => {
+        console.log('WS closed. Attempting reconnect in 5s...');
+        updateStatus(false);
+        setTimeout(connectWS, 5000);
+        };
+
+        ws.onerror = (e) => {
+        console.error('WS Error:', e);
+        ws.close(); // Force close to trigger onclose and reconnect logic
+        };
+        }
+
+        // Start connection when the page loads
+        window.onload = connectWS;
+    </script>
+</body>
+</html>
+
+
