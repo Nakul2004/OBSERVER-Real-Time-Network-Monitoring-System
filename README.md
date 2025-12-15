@@ -53,7 +53,6 @@ Follow these steps precisely to set up the environment and build the executable 
 
 Follow these steps in an **Administrator Command Prompt**.
 
-**1. Set up vcpkg Dependencies:**
 
 ```bash
 # 1a. Build the vcpkg tool itself
